@@ -23,8 +23,7 @@ data/*.db-journal
 data/*.db-wal
 data/*.db-shm
 
-# Auto-generated sound files (regenerated if missing)
-assets/sounds/*.wav
+# Auto-generated sound files (included in repo for packaging — small files)
 
 # Test / coverage
 .pytest_cache/

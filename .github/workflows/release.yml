@@ -45,13 +45,20 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt update && sudo apt install -y libfuse2 desktop-file-utils
+          sudo apt update && sudo apt install -y \
+            libfuse2 desktop-file-utils \
+            libegl1 libgl1 libglib2.0-0 libfontconfig1 \
+            xvfb
           pip install PySide6 PyInstaller
 
       - name: Generate icon
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: python generate_icon.py
 
       - name: Build AppImage
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: ./build_linux.sh
 
       - name: Upload artifact
