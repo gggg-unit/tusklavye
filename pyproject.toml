@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tusklavye"
+version = "1.0.0"
+description = "10 parmak yazma eğitmeni — Türkçe Q klavye için dokuz parmak yazma öğretici"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "TuşKlavye" }]
+keywords = ["typing", "touch-typing", "turkish", "klavye", "10-parmak", "tutor"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Turkish",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education :: Computer Aided Instruction (CAI)",
+]
+dependencies = [
+    "PySide6>=6.6.0,<6.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+tusklavye = "main:main"
+
+[project.urls]
+Homepage = "https://github.com/user/tusklavye"
+Issues = "https://github.com/user/tusklavye/issues"
+
+[tool.setuptools]
+packages = ["src", "src.core", "src.database", "src.ui", "src.ui.pages", "src.ui.widgets"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["assets", "data"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # function call in default argument (Qt pattern)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+"test_core.py" = ["B011"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "test_core.py"]
