@@ -77,6 +77,7 @@ APPRUN
 chmod +x "$APPDIR/AppRun"
 
 cp assets/icon.png "$APPDIR/.DirIcon"
+cp assets/icon.png "$APPDIR/tusklavye.png"
 cp "$APPDIR/usr/share/applications/tusklavye.desktop" "$APPDIR/tusklavye.desktop"
 
 echo "[5/6] Downloading appimagetool..."
