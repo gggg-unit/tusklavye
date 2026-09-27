@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QKeyEvent, QIcon, QPixmap, QPainter, QColor, QLinearGradient, QBrush
@@ -73,6 +75,11 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+        icon = self._load_icon_file()
+        if icon is not None:
+            self.setWindowIcon(icon)
+            return
+
         px = QPixmap(64, 64)
         px.fill(Qt.transparent)
         p = QPainter(px)
@@ -101,6 +108,16 @@ class MainWindow(QMainWindow):
 
         p.end()
         self.setWindowIcon(QIcon(px))
+
+    @staticmethod
+    def _load_icon_file() -> QIcon | None:
+        for candidate in (
+            Path(__file__).resolve().parent.parent.parent / "assets" / "icon.png",
+            Path(os.environ.get("_MEIPASS", "")) / "assets" / "icon.png",
+        ):
+            if candidate.is_file():
+                return QIcon(str(candidate))
+        return None
 
     def _init_context(self) -> None:
         self.layout_def = KeyboardLayout()
