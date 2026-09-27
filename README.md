@@ -2,6 +2,36 @@
 
 Python + PySide6 (Qt) ile yazılmış 10 parmak yazma öğretici uygulaması. Türkçe Q klavye düzenine göre tasarlanmıştır. Windows, Linux ve macOS'ta çalışır.
 
+## Ekran Görüntüleri
+
+### Ana Sayfa
+![Ana Sayfa](assets/screenshots/home.png)
+_Kullanıcının genel yazma performansı, günlük hedefleri ve başarıları_
+
+### Eğitim
+![Eğitim](assets/screenshots/training.png)
+_Adım adım dersler, parmak yerleşimi rehberi ve sanal klavye_
+
+### Testler
+![Testler](assets/screenshots/tests.png)
+_Zamanlı yazma testleri — kolay/orta/zor seviye, geri sayım ve canlı doğruluk_
+
+### Özel Metin
+![Özel Metin](assets/screenshots/custom_text.png)
+_Kendi metnini yaz veya hazır metinlerle pratik yap_
+
+### İstatistikler
+![İstatistikler](assets/screenshots/statistics.png)
+_WPM ve doğruluk grafikleri, hata ısı haritası_
+
+### Başarılar
+![Başarılar](assets/screenshots/achievements.png)
+_12 başarı rozeti — ilerledikçe kilidi açılır_
+
+### Ayarlar
+![Ayarlar](assets/screenshots/settings.png)
+_Tema, ses, günlük hedefler ve veri yönetimi_
+
 ## Özellikler
 
 - **Eğitim Dersleri** — 15 adım adım ders: ana satırdan tüm klavyeye, Türkçe karakterler (ğ ü i ş ö ç), sayılar, kelimeler, cümleler ve paragraflar.
