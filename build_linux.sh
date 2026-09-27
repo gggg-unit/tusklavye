@@ -37,11 +37,18 @@ echo "[4/6] Preparing AppDir..."
 APPDIR="build/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
-mkdir -p "$APPDIR/usr/lib"
+mkdir -p "$APPDIR/usr/lib/tusklavye"
 mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-cp -r dist/TusKlavye/* "$APPDIR/usr/lib/tusklavye/"
+if [ -d "dist/TusKlavye" ]; then
+    cp -r dist/TusKlavye/* "$APPDIR/usr/lib/tusklavye/"
+elif [ -f "dist/TusKlavye" ]; then
+    cp dist/TusKlavye "$APPDIR/usr/lib/tusklavye/TusKlavye"
+else
+    echo "ERROR: dist/TusKlavye not found!"
+    exit 1
+fi
 
 cat > "$APPDIR/usr/bin/tusklavye" << 'RUNNER'
 #!/usr/bin/env bash
