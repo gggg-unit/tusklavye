@@ -89,6 +89,12 @@ jobs:
           name: TusKlavye-linux
           path: dist/
 
+      - name: Tag stable release
+        if: github.ref == 'refs/heads/master'
+        run: |
+          git tag v2.0 "$GITHUB_SHA"
+          git push origin refs/tags/v2.0
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
