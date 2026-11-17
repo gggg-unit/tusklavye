@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QProgressBar,
 )
 
-from ...core.achievements import get_definitions, check_and_unlock
+from ...core.achievements import get_definitions
 from .base import BasePage
 from ..theme import palette
 
@@ -20,6 +20,7 @@ class HomePage(BasePage):
         self._build_stats()
         self._build_achievements()
         self._build_quick_actions()
+        self._root.addStretch(1)
 
     def _build_stats(self) -> None:
         row = QHBoxLayout()
@@ -94,9 +95,7 @@ class HomePage(BasePage):
         best_acc = self.ctx.stats_repo.get_best_accuracy()
         session_count = self.ctx.stats_repo.get_session_count()
         streak = self.ctx.stats_repo.get_streak()
-        completed_lessons = len(self.ctx.lesson_repo.get_completed())
-        check_and_unlock(self.ctx.stats_repo, self.ctx.achievement_repo,
-                         lesson_count=completed_lessons, streak=streak)
+        completed_lessons = len(self.ctx.lesson_repo.get_mastered())
         unlocked = {a["code"] for a in self.ctx.achievement_repo.get_all()}
 
         from ...core.achievements import THRESHOLDS
@@ -209,3 +208,4 @@ class HomePage(BasePage):
         self._build_stats()
         self._build_achievements()
         self._build_quick_actions()
+        self._root.addStretch(1)

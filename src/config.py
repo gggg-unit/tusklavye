@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "TuşKlavye - 10 Parmak Yazma Eğitmeni"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = BASE_DIR / "assets"

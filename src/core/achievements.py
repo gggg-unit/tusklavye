@@ -22,8 +22,8 @@ ACHIEVEMENTS: List[Tuple[str, str, str, str]] = [
     ("streak_7", "Haftalık Seri", "7 gün üst üste pratik yap", "📅"),
     ("sessions_10", "Azimli", "10 pratik seansı tamamla", "💪"),
     ("sessions_50", "Düşkün", "50 pratik seansı tamamla", "📚"),
-    ("lessons_5", "Öğrenci", "5 dersi tamamla", "🎓"),
-    ("lessons_all", "Usta", "Tüm dersleri tamamla", "👑"),
+    ("lessons_5", "Öğrenci", "5 derste hız ve doğruluk hedefine ulaş", "🎓"),
+    ("lessons_all", "Usta", "Tüm derslerde hız ve doğruluk hedefine ulaş", "👑"),
 ]
 
 THRESHOLDS = {

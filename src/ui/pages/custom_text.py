@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QTextEdit, QFileDialog, QMessageBox,
 )
 
-from ...core.typing_engine import TypingEngine
+from ...core.typing_engine import TypingEngine, normalize_text
 from ...database.models import SessionRecord, MAX_TEXT_LENGTH
 from ..widgets.typing_area import TypingArea
 from ..widgets.finger_guide import FingerGuide
@@ -28,6 +28,8 @@ PRESETS = [
         "Türkiye, Karadeniz ve Akdeniz kıyılarıyla zengin bir doğaya sahiptir.",
         "Selçuklu ve Osmanlı devletleri, Anadolu'da derin izler bırakmıştır.",
         "Türkiye Cumhuriyeti, millet iradesine dayanan bir yönetim anlayışına sahiptir.",
+        "İzmir'de sabah vapuruna bindik. Çaycı henüz bardakları dizerken kıyıdaki saat kulesi gözden kayboldu.",
+        "Kars'ta kar dinince sokağa çıktım. Fırından dönen birinin ayak izleri köşeye kadar bana yol gösterdi.",
     ]),
     ("📝 İstiklal", [
         "Korkma, sönmez bu şafaklarda yüzen alsancak.",
@@ -40,6 +42,8 @@ PRESETS = [
         "Hakkıdır, Hakk'a tapan, milletimin istiklal.",
         "İstiklal marşımız, milletimizin bağımsızlık ruhunu yansıtır.",
         "Bağımsızlık, bir milletin en kutsal ve vazgeçilmez değeridir.",
+        "Törenden önce marşın ilk kıtasını defterime yazdım. Virgül koyduğum yerlerde durup dizeleri yeniden okudum.",
+        "Korodaki en küçük öğrenci ilk sözü tek başına söyledi. İkinci dizede arka sıradan gelen sesler de ona katıldı.",
     ]),
     ("💡 Bilgelik", [
         "Bilgi, paylaştıkça çoğalan tek hazinedir.",
@@ -52,6 +56,8 @@ PRESETS = [
         "Düşünmek, zihne açılan pencerenin en genişidir.",
         "Her yeni kelime, zihnine yeni bir dünya katar.",
         "Bilgelik, yılların deneyimi ve sabrının meyvesidir.",
+        "Çırak, eğri kestiği tahtayı ustasına götürdü. Usta yeni bir tahta vermeden önce cetveli nereye dayadığını göstermesini istedi.",
+        "Bir sorunun cevabını bulamayınca onu başka türlü yazdım. İkinci cümlede neyi sormayı unuttuğumu gördüm.",
     ]),
     ("📖 Dil", [
         "Türkçe, Ural-Altay dil ailesinin Altay koluna bağlı bir dildir.",
@@ -64,6 +70,8 @@ PRESETS = [
         "İyi bir diksiyon, etkili iletişimin temel taşıdır.",
         "Türkçe, binlerce yıllık tarihi geçmişe sahip zengin bir dildir.",
         "Kelimeleri doğru kullanmak, düşünceleri net ifade etmektir.",
+        "Bir gül çiz, sonra gül. Aynı üç harf ilk cümlede deftere bir çiçek bırakır, ikincisinde yüze bir ifade.",
+        "Sözlükte çığ ile çığır yan yana gelince ikisini de sesli okudum. Birkaç harf, aklımdaki manzarayı bütünüyle değiştirdi.",
     ]),
     ("🌍 Doğa", [
         "Doğa, bize her mevsim farklı güzellikler sunar.",
@@ -76,6 +84,8 @@ PRESETS = [
         "Dağlar, yeryüzünün görkemli ve güçlü heykelleridir.",
         "Denizler, dünyanın üçte ikisini kaplar ve yaşam barındırır.",
         "Her canlı, ekosistemin ayrılmaz bir parçasıdır.",
+        "Yağmur çekilince taşın altında küçük bir salyangoz belirdi. İnce dalın ucuna varması bir fincan çay içene kadar sürdü.",
+        "Akşam kıyıda otururken suya eğilen söğüdü çizdim. Rüzgar her estiğinde ağacın sudaki resmi yeniden dağılıyordu.",
     ]),
     ("⚙️ Teknoloji", [
         "Bilgisayar kullanırken klavyeye bakmadan yazmak büyük bir avantajdır.",
@@ -88,6 +98,8 @@ PRESETS = [
         "Teknoloji, doğru kullanıldığında hayatı kolaylaştırır.",
         "Programlama dilleri, bilgisayarla insan arasında köprü kurar.",
         "Verimli çalışmak, doğru araçlar ve iyi alışkanlıklar gerektirir.",
+        "Eski radyonun düğmesini yavaşça çevirdim. İki istasyon arasındaki hışırtıdan önce bir piyano sesi, sonra bir maç anlatımı çıktı.",
+        "Fotoğrafları tarihe göre sıralayınca aynı ağacı dört mevsimde çektiğimi fark ettim. Dört kareyi yan yana getirip tek dosyaya kaydettim.",
     ]),
 ]
 
@@ -203,6 +215,7 @@ class CustomTextPage(BasePage, TypingPageMixin):
 
         self.finger_guide = FingerGuide(self.ctx.layout)
         self._root.addWidget(self.finger_guide)
+        self._root.addStretch(1)
 
     def _load_preset(self, sentences: list) -> None:
         text = random.choice(sentences)
@@ -239,10 +252,14 @@ class CustomTextPage(BasePage, TypingPageMixin):
             except Exception as e:
                 QMessageBox.warning(self, "Hata", f"Dosya okunamadı: {e}")
 
-    def _start_practice(self) -> None:
-        text = self.text_edit.toPlainText().strip()
+    def _start_practice(self) -> bool:
+        try:
+            text = normalize_text(self.text_edit.toPlainText().strip())
+        except ValueError as error:
+            QMessageBox.warning(self, "Geçersiz metin", str(error))
+            return False
         if not text:
-            return
+            return False
         if len(text) > MAX_TEXT_LENGTH:
             self._warn_lbl.setText(
                 f"⚠️ Metin çok uzun ({len(text)} karakter). İlk {MAX_TEXT_LENGTH} karakter kullanılacak."
@@ -251,17 +268,22 @@ class CustomTextPage(BasePage, TypingPageMixin):
             text = text[:MAX_TEXT_LENGTH]
         else:
             self._warn_lbl.setVisible(False)
+        if not self._prepare_session():
+            return False
         self._active = True
         self.typing_area.set_text(text)
         self._highlight_next_key()
-        self.window().setFocus()
+        self.typing_area.setFocus()
+        return True
 
     def _is_active(self) -> bool:
         return self._active
 
     def _on_finished(self, result) -> None:
+        if self.session.pending is not None:
+            return
+        self.typing_area.stop()
         self._active = False
-        self.ctx.sound.play_success()
         self.finger_guide.clear()
         record = SessionRecord(
             mode="custom",
@@ -276,9 +298,13 @@ class CustomTextPage(BasePage, TypingPageMixin):
             max_wpm=result.max_wpm,
             key_counts=result.key_counts,
             started_at=result.started_at,
+            duration_seconds=result.duration_seconds,
         )
-        self._save_session(record)
-        self._check_achievements()
+        if not self._save_session(record, completed=True):
+            return
+        if result.total_chars == 0:
+            return
+        self.ctx.sound.play_success()
         dialog = ResultsDialog(result, "Özel Metin Tamamlandı", self, show_retry=True)
         dialog.retry_requested.connect(self._start_practice)
         dialog.exec()

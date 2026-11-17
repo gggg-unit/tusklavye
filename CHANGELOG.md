@@ -1,3 +1,20 @@
+## 2.0
+
+15 ders, 72 test metni ve 72 hazır pratik metni. Ders ilerlemesini sürdürme, günlük hedefler ve veri yedekleme desteği.
+
+## 2.0.0b3 — 2026-11-17
+
+- Ayarlarda yazı boyutu, hedef WPM ve günlük dakika değerlerinin sıkışması düzeltildi.
+- Sayı alanlarının iç boşluğu ve minimum genişliği iki temada düzenlendi.
+- 265 test başarılı.
+
+## 2.0.0b2 — 2026-11-17
+
+- Eğitim sayfasına dönüşte ders, yazma konumu ve aktif süre korunur.
+- Manuel duraklatma ders listesi yenilenince kaybolmaz; yenileme fazladan kayıt oluşturmaz.
+- Windows uygulama kimliği, paket ikon yolu ve genel uygulama ikonu düzeltildi.
+- 263 test başarılı.
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

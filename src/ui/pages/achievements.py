@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
 )
 
-from ...core.achievements import get_definitions, check_and_unlock
+from ...core.achievements import get_definitions
 from .base import BasePage
 
 GRID_COLS = 3
@@ -24,10 +24,6 @@ class AchievementsPage(BasePage):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        streak = self.ctx.stats_repo.get_streak()
-        completed_lessons = len(self.ctx.lesson_repo.get_completed())
-        check_and_unlock(self.ctx.stats_repo, self.ctx.achievement_repo,
-                         lesson_count=completed_lessons, streak=streak)
 
         unlocked = {a["code"] for a in self.ctx.achievement_repo.get_all()}
 

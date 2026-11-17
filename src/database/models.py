@@ -6,6 +6,9 @@ accessors so callers do not need to compare against the string ``"True"``.
 """
 from __future__ import annotations
 
+import math
+from uuid import UUID, uuid4
+
 from dataclasses import dataclass, field
 from datetime import datetime, date
 from typing import Optional, Dict
@@ -39,6 +42,9 @@ class SessionRecord:
     max_wpm: float
     key_counts: Dict[str, Dict[str, int]] = field(default_factory=dict)
     started_at: str = ""
+    duration_seconds: float = 0.0
+    finished_at: str = ""
+    session_uid: str = ""
 
 
 class StatsRepository:
@@ -49,60 +55,57 @@ class StatsRepository:
 
     def save_session(self, record: SessionRecord) -> int:
         """Persist a session and its per-key stats. Returns the new session id."""
+        session_uid = UUID(record.session_uid).hex if record.session_uid else uuid4().hex
         text = record.text_content or ""
-        finished = _now()
-        if record.started_at:
-            try:
-                duration = (
-                    datetime.fromisoformat(finished)
-                    - datetime.fromisoformat(record.started_at)
-                ).total_seconds()
-            except (ValueError, TypeError):
-                duration = 0.0
-        else:
-            duration = 0.0
-            record.started_at = finished
+        finished = record.finished_at or _now()
+        started = record.started_at or finished
+        practiced_date = datetime.fromisoformat(finished).date().isoformat()
+        datetime.fromisoformat(started)
+        duration = float(record.duration_seconds)
+        if not math.isfinite(duration) or duration < 0:
+            raise ValueError("Session duration must be finite and non-negative")
 
-        cur = self.db.execute_no_commit(
-            """INSERT INTO sessions
-               (started_at, finished_at, duration_seconds, mode, mode_detail,
-                text_content, total_chars, correct_chars, incorrect_chars,
-                wpm, raw_wpm, accuracy, max_wpm)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                record.started_at,
-                finished,
-                duration,
-                record.mode,
-                record.mode_detail,
-                text[:MAX_TEXT_LENGTH],
-                record.total_chars,
-                record.correct_chars,
-                record.incorrect_chars,
-                record.wpm,
-                record.raw_wpm,
-                record.accuracy,
-                record.max_wpm,
-            ),
-        )
-        session_id = cur.lastrowid
-        if record.key_counts:
-            rows = [
-                (session_id, k, v.get("correct", 0), v.get("incorrect", 0))
-                for k, v in record.key_counts.items()
-            ]
-            self.db.executemany_no_commit(
-                """INSERT INTO key_stats (session_id, key_char, correct_count, incorrect_count)
-                   VALUES (?, ?, ?, ?)""",
-                rows,
+        with self.db.transaction():
+            cur = self.db.execute_no_commit(
+                """INSERT INTO sessions
+                   (started_at, finished_at, duration_seconds, mode, mode_detail,
+                    text_content, total_chars, correct_chars, incorrect_chars,
+                    wpm, raw_wpm, accuracy, max_wpm, session_uid)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    started,
+                    finished,
+                    duration,
+                    record.mode,
+                    record.mode_detail,
+                    text[:MAX_TEXT_LENGTH],
+                    record.total_chars,
+                    record.correct_chars,
+                    record.incorrect_chars,
+                    record.wpm,
+                    record.raw_wpm,
+                    record.accuracy,
+                    record.max_wpm,
+                    session_uid,
+                ),
             )
-        self._touch_streak_no_commit()
-        self.db.commit()
+            session_id = cur.lastrowid
+            if record.key_counts:
+                rows = [
+                    (session_id, k, v.get("correct", 0), v.get("incorrect", 0))
+                    for k, v in record.key_counts.items()
+                ]
+                self.db.executemany_no_commit(
+                    """INSERT INTO key_stats (session_id, key_char, correct_count, incorrect_count)
+                       VALUES (?, ?, ?, ?)""",
+                    rows,
+                )
+            self._touch_streak_no_commit(practiced_date)
         return session_id
 
-    def _touch_streak_no_commit(self):
-        """Mark today as practiced, without committing (caller commits)."""
-        today = _today()
+    def _touch_streak_no_commit(self, practiced_date: str):
+        """Mark the session finish date inside the caller transaction."""
+        today = practiced_date
         row = self.db.query_one("SELECT 1 FROM streak WHERE date = ?", (today,))
         if row is None:
             self.db.execute_no_commit(
@@ -119,19 +122,19 @@ class StatsRepository:
         return row["c"] if row else 0
 
     def get_best_wpm(self) -> float:
-        row = self.db.query_one("SELECT MAX(wpm) AS m FROM sessions")
+        row = self.db.query_one("SELECT MAX(wpm) AS m FROM sessions WHERE total_chars > 0")
         return row["m"] if row and row["m"] is not None else 0.0
 
     def get_avg_accuracy(self) -> float:
-        row = self.db.query_one("SELECT AVG(accuracy) AS a FROM sessions")
+        row = self.db.query_one("SELECT 100.0 * SUM(correct_chars) / NULLIF(SUM(total_chars), 0) AS a FROM sessions WHERE total_chars > 0")
         return row["a"] if row and row["a"] is not None else 0.0
 
     def get_best_accuracy(self) -> float:
-        row = self.db.query_one("SELECT MAX(accuracy) AS a FROM sessions")
+        row = self.db.query_one("SELECT MAX(accuracy) AS a FROM sessions WHERE total_chars > 0")
         return row["a"] if row and row["a"] is not None else 0.0
 
     def get_total_practice_minutes(self) -> float:
-        row = self.db.query_one("SELECT SUM(duration_seconds) AS s FROM sessions")
+        row = self.db.query_one("SELECT SUM(duration_seconds) AS s FROM sessions WHERE total_chars > 0 AND duration_seconds > 0")
         return (row["s"] / 60.0) if row and row["s"] is not None else 0.0
 
     def get_wpm_history(self, limit: int = 30) -> list:
@@ -165,7 +168,7 @@ class StatsRepository:
         return finger_stats
 
     def get_streak(self) -> int:
-        rows = self.db.query("SELECT date FROM streak ORDER BY date DESC")
+        rows = self.db.query("SELECT date FROM streak WHERE practiced = 1 AND date <= ? ORDER BY date DESC", (_today(),))
         if not rows:
             return 0
         dates = [date.fromisoformat(row["date"]) for row in rows]
@@ -192,20 +195,20 @@ class StatsRepository:
 
     def get_today_session_count(self) -> int:
         row = self.db.query_one(
-            "SELECT COUNT(*) AS c FROM sessions WHERE date(finished_at) = ?", (_today(),)
+            "SELECT COUNT(*) AS c FROM sessions WHERE substr(finished_at, 1, 10) = ?", (_today(),)
         )
         return row["c"] if row else 0
 
     def get_today_practice_minutes(self) -> float:
         row = self.db.query_one(
-            "SELECT SUM(duration_seconds) AS s FROM sessions WHERE date(finished_at) = ?",
+            "SELECT SUM(duration_seconds) AS s FROM sessions WHERE total_chars > 0 AND duration_seconds > 0 AND substr(finished_at, 1, 10) = ?",
             (_today(),),
         )
         return (row["s"] / 60.0) if row and row["s"] is not None else 0.0
 
     def get_today_best_wpm(self) -> float:
         row = self.db.query_one(
-            "SELECT MAX(wpm) AS m FROM sessions WHERE date(finished_at) = ?", (_today(),)
+            "SELECT MAX(wpm) AS m FROM sessions WHERE total_chars > 0 AND substr(finished_at, 1, 10) = ?", (_today(),)
         )
         return row["m"] if row and row["m"] is not None else 0.0
 
@@ -243,6 +246,22 @@ class LessonRepository:
     def get_completed(self) -> dict:
         rows = self.db.query("SELECT * FROM lesson_progress")
         return {r["lesson_id"]: dict(r) for r in rows}
+
+    def get_mastered(self) -> set[str]:
+        """Derive mastery from one full attempt; never combine separate best scores."""
+        from ..core.lessons import LESSONS
+        mastered = set()
+        for lesson in LESSONS:
+            count = len(lesson["text"].replace("\n", ""))
+            row = self.db.query_one(
+                """SELECT 1 FROM sessions WHERE mode = 'lesson' AND mode_detail = ?
+                   AND text_content = ? AND total_chars = ? AND duration_seconds > 0
+                   AND wpm >= ? AND accuracy >= ? LIMIT 1""",
+                (lesson["id"], lesson["text"], count,
+                 lesson["target_wpm"], lesson["target_accuracy"]))
+            if row:
+                mastered.add(lesson["id"])
+        return mastered
 
     def is_completed(self, lesson_id: str) -> bool:
         row = self.db.query_one(

@@ -2,15 +2,14 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QKeyEvent, QIcon, QPixmap, QPainter, QColor, QLinearGradient, QBrush
+from PySide6.QtGui import QFont, QKeyEvent, QIcon, QPixmap, QPainter, QColor, QLinearGradient, QBrush, QShortcut, QKeySequence
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFrame, QPushButton,
-    QStackedWidget, QLabel, QButtonGroup, QMessageBox,
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFrame, QPushButton,
+    QStackedWidget, QLabel, QButtonGroup,
 )
 
 from ..config import APP_NAME, APP_VERSION, DEFAULT_SETTINGS
@@ -19,7 +18,7 @@ from ..core.sound import SoundManager
 from ..core.keyboard_layout import KeyboardLayout
 from ..core.fonts import ui_font
 from ..database.models import (
-    StatsRepository, LessonRepository, AchievementRepository, SettingsRepository, SessionRecord,
+    StatsRepository, LessonRepository, AchievementRepository, SettingsRepository,
 )
 from .theme import get_qss, palette
 from .app_context import AppContext
@@ -66,17 +65,18 @@ class MainWindow(QMainWindow):
         self._init_context()
         self._build_ui()
         self.apply_settings()
+        for page in self.pages.values():
+            if hasattr(page, "typing_area"):
+                page.typing_area.pauseRequested.connect(self._toggle_pause)
+        self._pause_shortcut = QShortcut(QKeySequence("Esc"), self)
+        self._pause_shortcut.activated.connect(self._toggle_pause)
+        self._focus_shortcut = QShortcut(QKeySequence("F6"), self)
+        self._focus_shortcut.activated.connect(self._focus_typing)
 
     def _set_app_icon(self) -> None:
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TuşKlavye.10Parmak.1")
-            except Exception:
-                pass
-
         icon = self._load_icon_file()
         if icon is not None:
+            QApplication.instance().setWindowIcon(icon)
             self.setWindowIcon(icon)
             return
 
@@ -107,16 +107,18 @@ class MainWindow(QMainWindow):
             p.drawRoundedRect(start_x + i * (key_w + gap), y, key_w, key_h, 1, 1)
 
         p.end()
+        QApplication.instance().setWindowIcon(QIcon(px))
         self.setWindowIcon(QIcon(px))
 
     @staticmethod
     def _load_icon_file() -> QIcon | None:
-        for candidate in (
-            Path(__file__).resolve().parent.parent.parent / "assets" / "icon.png",
-            Path(os.environ.get("_MEIPASS", "")) / "assets" / "icon.png",
-        ):
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+        for name in ("icon.ico", "icon.png"):
+            candidate = base / "assets" / name
             if candidate.is_file():
-                return QIcon(str(candidate))
+                icon = QIcon(str(candidate))
+                if not icon.isNull() and not icon.pixmap(32, 32).isNull():
+                    return icon
         return None
 
     def _init_context(self) -> None:
@@ -221,12 +223,31 @@ class MainWindow(QMainWindow):
             page.refresh()
         self.stack.setCurrentWidget(page)
 
-        if page and hasattr(page, "resume_page"):
+        if page and hasattr(page, "resume_page") and not page.typing_area.manual_pause:
             page.resume_page()
 
         btn = self.nav_buttons.get(key)
         if btn:
             btn.setChecked(True)
+
+    def _focus_typing(self) -> None:
+        page = self.pages.get(self._current_page_key)
+        if page and hasattr(page, "typing_area"):
+            page.typing_area.setFocus(Qt.ShortcutFocusReason)
+
+    def _toggle_pause(self) -> None:
+        page = self.pages.get(self._current_page_key)
+        if not page or not hasattr(page, "typing_area"):
+            return
+        area = page.typing_area
+        if not area.pause_btn.isEnabled():
+            return
+        area.manual_pause = not area.engine.is_paused
+        if area.manual_pause:
+            page.pause_page()
+        else:
+            page.resume_page()
+            self._focus_typing()
 
     def apply_settings(self) -> None:
         self.setStyleSheet(get_qss(self.ctx.theme))
@@ -258,7 +279,7 @@ class MainWindow(QMainWindow):
         key = event.key()
         text = event.text()
 
-        if event.modifiers() & Qt.ControlModifier:
+        if event.modifiers() & Qt.ControlModifier and not event.modifiers() & Qt.AltModifier:
             nav_keys = {
                 Qt.Key_1: "home", Qt.Key_2: "training", Qt.Key_3: "tests",
                 Qt.Key_4: "custom", Qt.Key_5: "stats", Qt.Key_6: "achievements",
@@ -277,11 +298,17 @@ class MainWindow(QMainWindow):
         if key == Qt.Key_Escape:
             page = self.pages.get(self._current_page_key)
             if page and hasattr(page, "pause_page"):
-                page.pause_page()
+                self._toggle_pause()
                 return
         if key == Qt.Key_Tab:
-            if self._current_page_key in ("training", "tests", "custom"):
-                return
+            super().keyPressEvent(event)
+            return
+        page = self.pages.get(self._current_page_key)
+        display = getattr(getattr(page, "typing_area", None), "text_display", None)
+        if self.focusWidget() not in (self, display):
+            super().keyPressEvent(event)
+            return
+        if event.modifiers() & Qt.ControlModifier and not event.modifiers() & Qt.AltModifier:
             super().keyPressEvent(event)
             return
         if key == Qt.Key_Backspace:
@@ -305,46 +332,16 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Save any in-progress sessions before closing, with error reporting."""
-        mode_map = {"training": "lesson", "tests": "test", "custom": "custom"}
-        save_errors = []
-        for key, page in self.pages.items():
-            engine = getattr(page, "engine", None)
-            if not engine or not engine.target_text or engine.is_finished or engine.position == 0:
-                continue
-            result = engine.get_result()
-            if key == "tests" and hasattr(page, "_acc_total") and hasattr(page, "_combine_result"):
-                result = page._combine_result(result)
-            mode = mode_map.get(key, "unknown")
-            mode_detail = ""
-            if key == "training" and getattr(page, "current_lesson", None):
-                mode_detail = page.current_lesson["id"]
-            elif key == "tests":
-                mode_detail = f"{getattr(page, '_time_limit', 0)}s"
-            elif key == "custom":
-                mode_detail = "custom_text"
-            try:
-                record = SessionRecord(
-                    mode=mode, mode_detail=mode_detail,
-                    text_content=engine.target_text,
-                    total_chars=result.total_chars,
-                    correct_chars=result.correct_chars,
-                    incorrect_chars=result.incorrect_chars,
-                    wpm=result.wpm, raw_wpm=result.raw_wpm,
-                    accuracy=result.accuracy, max_wpm=result.max_wpm,
-                    key_counts=result.key_counts, started_at=result.started_at,
-                )
-                self.ctx.stats_repo.save_session(record)
-            except Exception as e:
-                logger.error(f"Failed to save pending session on close: {e}", exc_info=True)
-                save_errors.append(str(e))
-
-        if save_errors:
-            QMessageBox.warning(
-                self,
-                "Uyarı",
-                f"{len(save_errors)} oturum kaydedilemedi. Veriler kaybolmuş olabilir.\n"
-                f"İlk hata: {save_errors[0]}",
-            )
+        for page in self.pages.values():
+            if hasattr(page, "pause_page"):
+                page.pause_page()
+        failed = False
+        for page in self.pages.values():
+            if hasattr(page, "save_for_close") and not page.save_for_close():
+                failed = True
+        if failed:
+            event.ignore()
+            return
 
         try:
             from ..database.db import Database

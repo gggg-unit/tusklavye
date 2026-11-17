@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
 
 from ...core.achievements import check_and_unlock
 from ...database.models import SessionRecord
+from ...core.session import SessionController
 
 
 class BasePage(QWidget):
@@ -127,6 +128,12 @@ class TypingPageMixin:
     ERROR_FLASH_MS = 700
 
     def _init_typing_mixin(self) -> None:
+        from PySide6.QtWidgets import QPushButton
+        self.session = SessionController()
+        self.retry_save_btn = QPushButton("Kaydı yeniden dene")
+        self.retry_save_btn.setVisible(False)
+        self.retry_save_btn.clicked.connect(self._retry_pending_save)
+        self._root.addWidget(self.retry_save_btn)
         self._error_timer = QTimer(self)
         self._error_timer.setSingleShot(True)
         self._error_timer.timeout.connect(self._highlight_next_key)
@@ -135,13 +142,13 @@ class TypingPageMixin:
         raise NotImplementedError
 
     def on_key_press(self, char: str, key_text: str = "") -> None:
-        if not self._is_active() or self.engine.is_finished:
+        if not self._is_active() or self.engine.is_finished or self.engine.is_paused or self.session.pending is not None:
             return
         if char == "\b":
             self.engine.backspace()
             self._highlight_next_key()
             return
-        if not char:
+        if not char or not char.isprintable():
             return
         correct = self.engine.process_key(char)
         if correct:
@@ -177,14 +184,47 @@ class TypingPageMixin:
                 keyboard.clear_highlights()
             self.finger_guide.clear()
 
-    def _save_session(self, record: SessionRecord) -> bool:
-        """Persist a session; returns True on success, False on error."""
+    def _save_session(self, record: SessionRecord, completed=False) -> bool:
         try:
-            self.ctx.stats_repo.save_session(record)
+            self.session.persist(record, self.ctx, completed)
+            self.retry_save_btn.setVisible(False)
             return True
         except Exception as e:
+            self.retry_save_btn.setVisible(True)
             self._show_save_error(e)
             return False
+
+    def _retry_pending_save(self):
+        if self.session.pending is None:
+            return True
+        return self._save_session(self.session.pending, self.session.completed)
+
+    def _prepare_session(self):
+        if not self.save_for_close():
+            return False
+        self.session.reset()
+        return True
+
+    def save_for_close(self):
+        if self.session.pending is not None:
+            return self._retry_pending_save()
+        result = self.engine.get_result()
+        if hasattr(self, "_acc_total"):
+            self.session.clock.finish()
+            result = self._combine_result(result)
+        if result.total_chars == 0:
+            return True
+        completed = self.engine.is_finished and not hasattr(self, "_acc_total")
+        self.typing_area.stop()
+        self.engine.finish()
+        mode = "lesson" if hasattr(self, "current_lesson") else (
+            "test" if hasattr(self, "_time_limit") else "custom")
+        detail = (self.current_lesson["id"] if mode == "lesson" and self.current_lesson
+                  else f"{self._time_limit}s" if mode == "test" else "custom_text")
+        text = "".join(getattr(self, "_acc_text_parts", [])) + self.engine.target_text
+        return self._save_session(SessionRecord(
+            mode=mode, mode_detail=detail, text_content=text, **vars(result)),
+            completed=completed)
 
     def _check_achievements(self) -> None:
         completed = len(self.ctx.lesson_repo.get_completed())
@@ -196,7 +236,7 @@ class TypingPageMixin:
 
     def _show_save_error(self, error: Exception) -> None:
         from PySide6.QtWidgets import QMessageBox
-        from ..i18n import tr
+        from ...i18n import tr
         QMessageBox.warning(
             self,
             tr("error.save_failed", error=error),

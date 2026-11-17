@@ -5,7 +5,7 @@ from src.core.keyboard_layout import KeyboardLayout, _tr_upper, _tr_lower
 def test_finger_mapping(layout):
     assert layout.finger_for_char("a") == "LP"
     assert layout.finger_for_char("j") == "RI"
-    assert layout.finger_for_char("ş") == "RR"
+    assert layout.finger_for_char("ş") == "RP"
     assert layout.finger_for_char(" ") == "RT"
     assert len(layout.rows) == 4
 

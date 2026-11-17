@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
+    QDialog, QGridLayout, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
 )
 
 CARD_HEIGHT = 80
@@ -26,12 +26,13 @@ class ResultsDialog(QDialog):
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(16)
 
-        header = QLabel("✅ Tamamlandı!")
+        header = QLabel(self.windowTitle())
         header.setObjectName("pageTitle")
+        header.setWordWrap(True)
         header.setAlignment(Qt.AlignCenter)
         layout.addWidget(header)
 
-        row = QHBoxLayout()
+        row = QGridLayout()
         row.setSpacing(12)
         for value, label in [
             (f"{result.wpm:.1f}", "WPM"),
@@ -53,7 +54,8 @@ class ResultsDialog(QDialog):
             c.setAlignment(Qt.AlignCenter)
             cl.addWidget(v)
             cl.addWidget(c)
-            row.addWidget(card)
+            index = row.count()
+            row.addWidget(card, index // 3, index % 3)
         layout.addLayout(row)
 
         if result.max_wpm > 0:

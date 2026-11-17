@@ -24,6 +24,10 @@ EASY_TEXTS = [
     "Kardeşim okulda. Annem işte. Babam evde. Ben odamda ders çalışıyorum.",
     "Marketten ekmek aldım. Süt de aldım. Yumurta da lazım. Poşet ağır oldu.",
     "Televizyon seyrediyorum. Haberler geliyor. Hava durumu sonrasında film var.",
+    "Çay hazır. İki ince bardak aldım. Birini sana ayırdım.",
+    "Kedi kapıda durdu. Önce sağa baktı. Sonra içeri girdi.",
+    "Bugün hava açık. Küçük bir çanta alıp göle yürüdük.",
+    "Üç elma seçtim. En küçüğünü yolda yedim.",
 ]
 
 MEDIUM_TEXTS = [
@@ -47,6 +51,10 @@ MEDIUM_TEXTS = [
     "Tarih, geçmişten ders çıkarmamızı sağlayan önemli bir disiplindir. Geçmişte yaşanan olayları incelemek, bugünü anlamamıza ve geleceğe daha bilinçli adımlarla ilerlememize yardımcı olur.",
     "Bilim, evrenin işleyişini anlamamızı sağlayan sistematik bir yöntemdir. Gözlem, deney ve analitik düşünceyle çalışan bilim insanları, insanlığın yaşamını kökten değiştiren keşifler yapmıştır.",
     "Sanat, insanların duygularını ve düşüncelerini ifade etme biçimidir. Resim, heykel, tiyatro, sinema ve edebiyat gibi farklı sanat dalları, zengin ve çeşitli bir kültürel miras oluşturur.",
+    "Vapur kıyıya yanaşırken yağmur dindi. Çantamdan defterimi çıkardım ve ıslak güvertede gördüğüm kuşun resmini çizdim.",
+    "Terzi, ceketin iki kolunu da ölçtü. Sol kolu biraz kısaltınca düğmeler bileğimin hemen üstünde aynı hizaya geldi.",
+    "Pazar sabahı dükkanın önüne küçük bir raf koyduk. Öğleye doğru raftaki kitaplar el değiştirmiş, boş kalan yere bir çizgi roman bırakılmıştı.",
+    "Otobüsten bir durak erken indik. Eve dönerken fırından ekmek aldık, köşedeki çiçekçiye de boş saksıları bıraktık.",
 ]
 
 HARD_TEXTS = [
@@ -70,6 +78,10 @@ HARD_TEXTS = [
     "Hukuk, toplumsal düzenin sağlanması ve bireylerin haklarının korunması için oluşturulan kurallar bütünüdür. Anayasa hukuku, medeni hukuk, ceza hukuku ve idare hukuku gibi alt dalların her biri, toplumsal yaşamın farklı yönlerini düzenler. Hukukun üstünlüğü ilkesi, demokratik toplumların temel taşlarından biridir.",
     "Edebiyat eleştirisi, bir metnin yapısal, tematik ve estetik özelliklerini sistematik biçimde değerlendiren disiplindir. Yeni eleştiri, yapısalçılık, postyapısalçılık ve feminist eleştiri gibi yaklaşımların her biri, metni farklı bir perspektiften okur. Bir eserin çok katmanlı anlamlarını ortaya çıkarmak, eleştirel okuma becerisi gerektirir.",
     "Tıp, insan sağlığını koruma, hastalıkları tedavi etme ve yaşam kalitesini iyileştirme amacı güden bir bilim ve sanat dalıdır. Anatomi, fizyoloji, farmakoloji ve patoloji gibi temel bilimler, klinik uygulamaların altyapısını oluşturur. Modern tıpta genetik tedaviler, immunoterapi ve robotik cerrahi gibi yenilikçi yaklaşımlar hızla yaygınlaşmaktadır.",
+    "İstasyondaki saat 08.45'i gösterirken anons kesildi. Görevli, 3 numaralı peronda bekleyenlere yeni bir yol tarif etti: Önce alt geçide inilecek, ardından çıkıştaki sarı oklar izlenecekti. Elinde ağır bir bavul taşıyan yolcu, asansörün yerini sorunca hepimiz bir an durduk.",
+    "Baskıdan çıkan ilk haritada köprünün adı okunmuyordu. Çizer, yazıyı iki milimetre kuzeye kaydırdı ve sayfayı yeniden bastı. Bu kez adı seçiliyordu ama ince mavi çizgi nerede bitiyordu? Sorunun cevabını bulmak için haritayı katlayıp kıyıya indik.",
+    "Arşivdeki fotoğrafın arkasında yalnızca şu soru vardı: Bu kapı hangi sokağa açılırdı? Üç komşu üç ayrı adres verdi. İçlerinden biri, eşikteki çentiği görünce çocukken orada misket oynadığını hatırladı. Ertesi gün aynı eşiği eski postanenin karşısında bulduk.",
+    "Saat 17.30'da prova başladı. İlk bölümde kemanlar erkenden girince şef elini kaldırdı. Ölçüyü bu kez yüksek sesle saydık, sonra aynı dört satırı gözümüzü birbirimizden ayırmadan çaldık. Son nota sustuğunda duvar saatinin tıkırtısı yeniden duyuldu.",
 ]
 
 TEST_TEXTS = {

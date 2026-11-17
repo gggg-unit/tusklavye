@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSignalBlocker
 from PySide6.QtWidgets import (
-    QVBoxLayout, QLabel, QFrame, QListWidget, QListWidgetItem, QSplitter, QWidget,
+    QVBoxLayout, QLabel, QFrame, QListWidget, QListWidgetItem, QSplitter, QScrollArea, QWidget,
 )
 
-from ...core.lessons import LESSONS
+from ...core.lessons import LESSONS, meets_lesson_target
 from ...core.typing_engine import TypingEngine
 from ...database.models import SessionRecord
 from ..widgets.typing_area import TypingArea
@@ -56,8 +56,10 @@ class TrainingPage(BasePage, TypingPageMixin):
         info_layout = QVBoxLayout(info_card)
         info_layout.setContentsMargins(16, 12, 16, 12)
         self.lesson_title_lbl = QLabel("Bir ders seç")
+        self.lesson_title_lbl.setWordWrap(True)
         self.lesson_title_lbl.setObjectName("pageTitle")
         self.lesson_desc_lbl = QLabel("")
+        self.lesson_desc_lbl.setWordWrap(True)
         self.lesson_desc_lbl.setObjectName("pageSubtitle")
         info_layout.addWidget(self.lesson_title_lbl)
         info_layout.addWidget(self.lesson_desc_lbl)
@@ -74,40 +76,61 @@ class TrainingPage(BasePage, TypingPageMixin):
         self.keyboard = VirtualKeyboard(self.ctx.layout)
         self.keyboard.keyPressed.connect(self.on_key_press)
         right_layout.addWidget(self.keyboard)
+        right_layout.addStretch(1)
 
-        splitter.addWidget(right)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(right)
+        splitter.addWidget(scroll)
         splitter.setSizes([260, 700])
-        self._root.addWidget(splitter)
+        self._root.addWidget(splitter, 1)
+        self._root.addWidget(QLabel("✓ Metin bitirildi   ★ Hız ve doğruluk hedefine ulaşıldı"))
 
     def _load_lessons(self) -> None:
         completed = self.ctx.lesson_repo.get_completed()
-        self.lesson_list.clear()
-        for lesson in LESSONS:
-            status = "✅ " if lesson["id"] in completed else "○ "
-            item = QListWidgetItem(f"{status}{lesson['id']} - {lesson['title']}")
-            item.setData(Qt.UserRole, lesson)
-            self.lesson_list.addItem(item)
+        mastered = self.ctx.lesson_repo.get_mastered()
+        selected_id = self.current_lesson["id"] if self.current_lesson else None
+        with QSignalBlocker(self.lesson_list):
+            self.lesson_list.clear()
+            for index, lesson in enumerate(LESSONS):
+                status = "★ " if lesson["id"] in mastered else ("✓ " if lesson["id"] in completed else "○ ")
+                item = QListWidgetItem(f"{status}{lesson['id']} - {lesson['title']}")
+                item.setData(Qt.UserRole, lesson)
+                self.lesson_list.addItem(item)
+                if lesson["id"] == selected_id:
+                    self.lesson_list.setCurrentRow(index)
 
     def _on_lesson_selected(self, row: int) -> None:
         if row < 0:
+            return
+        if not self._prepare_session():
+            self.lesson_list.blockSignals(True)
+            for index in range(self.lesson_list.count()):
+                item = self.lesson_list.item(index)
+                if self.current_lesson and item.data(Qt.UserRole)["id"] == self.current_lesson["id"]:
+                    self.lesson_list.setCurrentRow(index)
+                    break
+            self.lesson_list.blockSignals(False)
             return
         item = self.lesson_list.item(row)
         lesson = item.data(Qt.UserRole)
         self.current_lesson = lesson
         self.lesson_title_lbl.setText(lesson["title"])
         self.lesson_desc_lbl.setText(
-            f"{lesson['description']}  •  Hedef: {lesson['target_wpm']} WPM"
+            f"{lesson['description']}  •  Hedef: {lesson['target_wpm']} WPM + %{lesson['target_accuracy']:.0f} doğruluk"
         )
         self.typing_area.set_text(lesson["text"])
         self.keyboard.clear_highlights()
         self._highlight_next_key()
-        self.window().setFocus()
+        self.typing_area.setFocus()
 
     def _is_active(self) -> bool:
         return self.current_lesson is not None
 
     def _on_finished(self, result) -> None:
-        self.ctx.sound.play_success()
+        if self.session.pending is not None:
+            return
+        self.typing_area.stop()
         self.keyboard.clear_highlights()
         self.finger_guide.clear()
         record = SessionRecord(
@@ -123,25 +146,29 @@ class TrainingPage(BasePage, TypingPageMixin):
             max_wpm=result.max_wpm,
             key_counts=result.key_counts,
             started_at=result.started_at,
+            duration_seconds=result.duration_seconds,
         )
-        if self._save_session(record):
-            self.ctx.lesson_repo.mark_completed(
-                self.current_lesson["id"], result.wpm, result.accuracy
-            )
-        self._check_achievements()
+        if not self._save_session(record, completed=True):
+            return
+        if result.total_chars == 0:
+            return
+        self.ctx.sound.play_success()
         self._load_lessons()
         is_last = self.current_lesson["id"] == LESSONS[-1]["id"]
-        dialog = ResultsDialog(result, "Ders Tamamlandı", self, show_retry=True, show_next=not is_last)
+        mastered_now = meets_lesson_target(self.current_lesson, result) if "target_wpm" in self.current_lesson else False
+        title = "Hedefe Ulaşıldı" if mastered_now else "Metin Bitti — Hedef İçin Tekrar Çalış"
+        dialog = ResultsDialog(result, title, self, show_retry=True,
+                               show_next=not is_last and mastered_now)
         dialog.retry_requested.connect(self.retry_lesson)
         dialog.next_requested.connect(self.next_lesson)
         dialog.exec()
 
     def retry_lesson(self) -> None:
-        if self.current_lesson:
+        if self.current_lesson and self._prepare_session():
             self.typing_area.set_text(self.current_lesson["text"])
             self.keyboard.clear_highlights()
             self._highlight_next_key()
-            self.window().setFocus()
+            self.typing_area.setFocus()
 
     def next_lesson(self) -> None:
         if self.current_lesson:

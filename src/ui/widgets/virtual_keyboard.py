@@ -6,7 +6,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QSizePolicy
 
 from ...config import FINGER_COLORS, FINGER_NAMES
-from ...core.keyboard_layout import KeyboardLayout, _tr_lower
+from ...core.keyboard_layout import KeyboardLayout
 from ...core.fonts import ui_font
 from ..theme import palette
 
@@ -48,6 +48,7 @@ class VirtualKeyboard(QWidget):
         super().__init__(parent)
         self.layout_def = layout or KeyboardLayout()
         self._theme = "dark"
+        self._modifier = ""
         self._key_buttons: dict = {}
         self._base_styles: dict = {}
         self._prev_active: set = set()
@@ -82,7 +83,13 @@ class VirtualKeyboard(QWidget):
         space_row = QHBoxLayout()
         space_row.setSpacing(4)
         space_row.addStretch()
-        space_btn = QPushButton("space")
+        for modifier in ("Shift", "AltGr"):
+            button = QPushButton(modifier)
+            button.setCheckable(True)
+            button.clicked.connect(lambda checked, name=modifier: self._set_modifier(name, checked))
+            setattr(self, "_" + modifier.lower() + "_button", button)
+            space_row.addWidget(button)
+        space_btn = QPushButton("Boşluk")
         space_btn.setFixedHeight(KEY_HEIGHT)
         space_btn.setMinimumWidth(280)
         space_btn.setFont(QFont(ui_font(), 10))
@@ -108,6 +115,7 @@ class VirtualKeyboard(QWidget):
             legend_row.addWidget(dot)
         legend_row.addStretch()
         outer.addLayout(legend_row)
+        self.setMinimumHeight(5 * KEY_HEIGHT + 48)
 
     def _build_row(self, row) -> QWidget:
         container = QHBoxLayout()
@@ -117,18 +125,35 @@ class VirtualKeyboard(QWidget):
         for key in row:
             btn = QPushButton(key.display)
             btn.setFixedHeight(KEY_HEIGHT)
-            btn.setFixedWidth(int(KEY_HEIGHT * key.width))
+            btn.setMinimumWidth(int(24 * key.width))
+            btn.setMaximumWidth(int(KEY_HEIGHT * key.width))
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setFont(QFont(ui_font(), 11, QFont.Bold))
             btn.setStyleSheet(self._key_style(key.char, key.finger))
-            btn.clicked.connect(lambda checked, c=key.char: self.keyPressed.emit(c))
+            btn.clicked.connect(lambda checked, c=key.char: self._emit_key(c))
             self._key_buttons[key.char] = btn
             self._base_styles[key.char] = self._key_style(key.char, key.finger)
-            container.addWidget(btn)
+            container.addWidget(btn, 1)
         container.addStretch(1)
         wrapper = QWidget()
         wrapper.setLayout(container)
+        wrapper.setMinimumHeight(KEY_HEIGHT)
         wrapper.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         return wrapper
+
+    def _set_modifier(self, name, checked):
+        self._modifier = name if checked else ""
+        self._shift_button.setChecked(self._modifier == "Shift")
+        self._altgr_button.setChecked(self._modifier == "AltGr")
+        for row in self.layout_def.rows:
+            for key in row:
+                output = self.layout_def.output_for_key(key.char, self._modifier)
+                self._key_buttons[key.char].setText(output or "—")
+
+    def _emit_key(self, base):
+        output = self.layout_def.output_for_key(base, self._modifier)
+        if output:
+            self.keyPressed.emit(output)
 
     def _key_style(self, char: str, finger: str) -> str:
         color = FINGER_COLORS.get(finger, "#888888")
@@ -143,16 +168,18 @@ class VirtualKeyboard(QWidget):
         )
 
     def highlight_next(self, char: str) -> None:
-        self._next_key_char = _tr_lower(char)
+        self._next_key_char, modifier = self.layout_def.stroke_for_char(char)
+        self._shift_button.setStyleSheet(NEXT_STYLE if modifier == "Shift" else "")
+        self._altgr_button.setStyleSheet(NEXT_STYLE if modifier == "AltGr" else "")
         self._error_key_char = ""
         self._refresh_styles()
 
     def flash_error(self, char: str) -> None:
-        self._error_key_char = _tr_lower(char)
+        self._error_key_char = self.layout_def.stroke_for_char(char)[0]
         self._refresh_styles()
 
     def flash_correct(self, char: str) -> None:
-        self._flash_key_char = _tr_lower(char)
+        self._flash_key_char = self.layout_def.stroke_for_char(char)[0]
         self._refresh_styles()
         self._flash_timer.start(FLASH_MS)
 
@@ -161,6 +188,8 @@ class VirtualKeyboard(QWidget):
         self._refresh_styles()
 
     def clear_highlights(self) -> None:
+        self._shift_button.setStyleSheet("")
+        self._altgr_button.setStyleSheet("")
         self._next_key_char = ""
         self._error_key_char = ""
         self._flash_key_char = ""

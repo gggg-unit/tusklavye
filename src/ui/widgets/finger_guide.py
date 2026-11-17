@@ -13,7 +13,7 @@ from PySide6.QtGui import QFont, QPainter, QColor, QPaintEvent, QPen, QBrush
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QSizePolicy
 
 from ...config import FINGER_COLORS, FINGER_NAMES
-from ...core.keyboard_layout import KeyboardLayout
+from ...core.keyboard_layout import KeyboardLayout, HOME_FINGER_KEYS
 from ...core.fonts import ui_font, mono_font
 from ..theme import palette
 
@@ -30,25 +30,14 @@ FINGER_LAYOUT = [
     ("RP", "Serçe", "ş", "right"),
 ]
 
-HOME_ROW = set("asdfghjklşi,")
-UPPER_ROW = set("qwertyuıopğü")
-LOWER_ROW = set("zxcvbnmöç.")
+FINGER_LAYOUT = [(code, name, HOME_FINGER_KEYS.get(code, home), hand)
+                 for code, name, home, hand in FINGER_LAYOUT]
 
 PULSE_MS = 50
 PULSE_STEP = 0.15
 CIRCLE_R = 26
 CIRCLE_GAP = 8
 THUMB_OFFSET = 18
-
-
-def _row_label(char: str) -> str:
-    if char in HOME_ROW:
-        return ""
-    if char in UPPER_ROW:
-        return "yukarı uzan"
-    if char in LOWER_ROW:
-        return "aşağı uzan"
-    return ""
 
 
 class _HandsCanvas(QFrame):
@@ -101,8 +90,10 @@ class _HandsCanvas(QFrame):
         p = palette(self._theme)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        w = self.width()
-        h = self.height()
+        scale = min(1.0, self.width() / 720)
+        painter.scale(scale, scale)
+        w = self.width() / scale
+        h = self.height() / scale
 
         title_font = QFont(ui_font(), 10, QFont.Bold)
         painter.setFont(title_font)
@@ -197,7 +188,9 @@ class FingerGuide(QWidget):
         self.hint_label.setAlignment(Qt.AlignCenter)
         self.hint_label.setObjectName("pageSubtitle")
         self.hint_label.setStyleSheet("font-size: 13px; padding: 4px;")
+        self.hint_label.setWordWrap(True)
         outer.addWidget(self.hint_label)
+        self.setMinimumHeight(190)
 
     def set_theme(self, theme: str) -> None:
         self._theme = theme
@@ -209,22 +202,25 @@ class FingerGuide(QWidget):
             return
         finger = self.layout_def.finger_for_char(char)
         self.canvas.set_active(finger)
-        finger_name = FINGER_NAMES.get(finger, finger)
-        reach = _row_label(char.lower())
+        if not finger:
+            self.hint_label.setText(f"'{char}': Bu karakter için parmak rehberi tanımlı değil.")
+            return
+        base, modifier = self.layout_def.stroke_for_char(char)
+        row = self.layout_def.row_for_char(char)
+        reach = {0: "sayı satırına uzan", 1: "yukarı uzan", 2: "ana satır",
+                 3: "aşağı uzan"}.get(row, "boşluk")
         display = char if char != " " else "boşluk"
-        if reach:
-            self.hint_label.setText(
-                f"👉 Sıradaki: '{display}'  →  {finger_name} parmağı  ({reach})"
-            )
-        else:
-            self.hint_label.setText(
-                f"👉 Sıradaki: '{display}'  →  {finger_name} parmağı  (ana satır)"
-            )
+        combination = f" — {modifier} + {base}" if modifier else ""
+        self.hint_label.setText(
+            f"Sıradaki: '{display}' — {FINGER_NAMES[finger]} ({reach}){combination}")
         self.hint_label.setStyleSheet("font-size: 13px; padding: 4px; color: #f39c12; font-weight: 600;")
 
     def show_error(self, expected_char: str) -> None:
         finger = self.layout_def.finger_for_char(expected_char)
         self.canvas.set_error(finger)
+        if not finger:
+            self.hint_label.setText(f"Beklenen: {expected_char} — parmak rehberi tanımlı değil.")
+            return
         finger_name = FINGER_NAMES.get(finger, finger)
         display = expected_char if expected_char != " " else "boşluk"
         self.hint_label.setText(

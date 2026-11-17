@@ -5,9 +5,9 @@ description, the keys introduced, and practice text.
 """
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any
+from typing import Any
 
-LESSONS: List[Dict[str, Any]] = [
+LESSONS: list[dict[str, Any]] = [
     {
         "id": "L01",
         "title": "Ana Satır - Sol El",
@@ -29,7 +29,7 @@ LESSONS: List[Dict[str, Any]] = [
         "title": "Ana Satır - Tamamı",
         "description": "İki el birlikte ana satır: a s d f j k l ş",
         "keys": ["a", "s", "d", "f", "j", "k", "l", "ş"],
-        "text": "asdf jklş asdf jklş asdf jklş\ndaks jşlk daks jşlk daks jşlk\nfjdk slşa fjdk slşa fjdk slşa\nalkış dakika falaka şakada",
+        "text": "asdf jklş asdf jklş asdf jklş\ndaks jşlk daks jşlk daks jşlk\nfjdk slşa fjdk slşa fjdk slşa\nşaka dakika falaka şakada",
         "target_wpm": 20,
     },
     {
@@ -53,7 +53,7 @@ LESSONS: List[Dict[str, Any]] = [
         "title": "Üst Satır - Tamamı",
         "description": "Tüm üst satır: q w e r t y u ı o p",
         "keys": ["q", "w", "e", "r", "t", "y", "u", "ı", "o", "p"],
-        "text": "qwertyuıop qwertyuıop qwertyuıop\nportakal teyp ırak puro wet\nyaprak pırtık ortalama türk\npencere yorgun ırmak tereyağı",
+        "text": "qwertyuıop qwertyuıop qwertyuıop\nportakal teyp ırak puro wet\nyaprak pırtık orta türk\npencere yorgun ırmak tereyağı",
         "target_wpm": 22,
     },
     {
@@ -152,7 +152,34 @@ LESSONS: List[Dict[str, Any]] = [
 ]
 
 
-def get_lesson(lesson_id: str) -> Optional[dict]:
+# Curriculum revision 2: early lessons only use introduced physical keys.
+LESSONS[2].update(
+    keys=list("asdfghjklşi,"),
+    description="Ana satırı birleştir; iç tuşları ve i, virgül tuşlarını ekle.",
+    text="asdf jklş asdf jklş\ngh gh fg jh gh gh\ni, i, şiş şiş\nşaka dakika falaka şakada")
+LESSONS[5]["text"] = (
+    "qwertyuiop qwertyuiop".replace("i", "ı") +
+    "\nportakal teyp ırak puro\nyaprak pırtık orta\nqwert asdf yuyı şiş")
+LESSONS[9].update(
+    title="Sayılar ve Noktalama",
+    keys=list("1234567890") + ['"', "*", "-", "<"],
+    description="Rakamlar; Shift ile ! ? : ; ve apostrof. AltGr ile @ işareti.",
+    text="12345 67890 12345 67890\n05 10 15 20 25 30\n1! 2' 0= *? -_ .: ,; <>\na@a 12,50; 20:30.")
+for lesson in LESSONS:
+    lesson["content_version"] = 2
+    lesson["target_accuracy"] = 95.0
+LESSONS[11]["description"] += " Büyük harfler için Shift kullan; İ/i ve I/ı ayrımına dikkat et."
+
+
+def meets_lesson_target(lesson, result) -> bool:
+    """Mastery needs the entire current text and both thresholds in one attempt."""
+    count = len(lesson["text"].replace("\n", ""))
+    return (result.total_chars == count and result.duration_seconds > 0
+            and result.wpm >= lesson["target_wpm"]
+            and result.accuracy >= lesson["target_accuracy"])
+
+
+def get_lesson(lesson_id: str) -> dict | None:
     for lesson in LESSONS:
         if lesson["id"] == lesson_id:
             return lesson

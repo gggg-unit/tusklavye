@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont, QFontMetrics, QPainter, QColor, QPaintEvent, QPen
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QFrame, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QFrame, QSizePolicy, QPushButton, QLabel, QHBoxLayout
 
 from ...core.typing_engine import TypingEngine
 from ...core.fonts import mono_font
@@ -20,6 +20,9 @@ class _TextDisplay(QFrame):
     def __init__(self, engine: TypingEngine, font_size: int, theme: str = "dark", parent=None):
         super().__init__(parent)
         self.setObjectName("card")
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setAccessibleName("Yazma alanı")
+        self.setToolTip("Yazmak için buraya tıklayın. F6: yazma alanı, Esc: duraklat/devam, Tab: kontroller")
         self.engine = engine
         self.font_size = font_size
         self._theme = theme
@@ -54,7 +57,7 @@ class _TextDisplay(QFrame):
         while i < len(text):
             ch = text[i]
             if ch == "\n":
-                lines.append((start, i))
+                lines.append((start, i + 1))
                 i += 1
                 start = i
                 count = 0
@@ -104,7 +107,7 @@ class _TextDisplay(QFrame):
             painter.end()
             return
 
-        vl_key = (len(text), rect.width(), char_width)
+        vl_key = (text, rect.width(), char_width)
         if vl_key == self._vl_cache_key:
             visual_lines = self._vl_cache
         else:
@@ -130,12 +133,12 @@ class _TextDisplay(QFrame):
         y = rect.y() + metrics.ascent()
         for vline_idx in range(window_start, window_end):
             start, end = visual_lines[vline_idx]
-            line_text = text[start:end].rstrip()
+            line_text = text[start:end]
             visible_end = start + len(line_text)
             visible_width = len(line_text) * char_width
             x = rect.x() + (rect.width() - visible_width) / 2
             for i in range(start, visible_end):
-                ch = text[i]
+                ch = {" ": "·", "\n": "↵"}.get(text[i], text[i])
                 status = self.engine.char_status(i)
                 if status == "correct":
                     painter.setPen(color_correct)
@@ -169,6 +172,7 @@ class TypingArea(QWidget):
     """Wrapper around _TextDisplay that emits stats and finished signals."""
     finished = Signal(object)
     statsUpdated = Signal(float, float, float)
+    pauseRequested = Signal()
 
     def __init__(self, engine: TypingEngine, font_size: int = 26, show_timer: bool = False, theme: str = "dark", parent=None):
         super().__init__(parent)
@@ -186,11 +190,32 @@ class TypingArea(QWidget):
         layout.setSpacing(8)
         self.text_display = _TextDisplay(self.engine, self.font_size, self._theme)
         layout.addWidget(self.text_display)
+        self.setFocusProxy(self.text_display)
+        self.manual_pause = False
+        controls = QHBoxLayout()
+        self.state_label = QLabel("Hazır · F6: yazma alanı · Tab: kontroller")
+        self.state_label.setWordWrap(True)
+        self.pause_btn = QPushButton("Duraklat (Esc)")
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.clicked.connect(self.pauseRequested.emit)
+        controls.addWidget(self.state_label, 1)
+        controls.addWidget(self.pause_btn)
+        layout.addLayout(controls)
 
     def set_text(self, text: str) -> None:
+        self.manual_pause = False
         self.engine.reset(text)
         self._timer.start(TICK_MS)
         self.text_display.update()
+        self._update_controls()
+
+    def _update_controls(self) -> None:
+        active = bool(self.engine.target_text) and not self.engine.is_finished
+        self.pause_btn.setEnabled(active)
+        paused = self.engine.is_paused
+        self.pause_btn.setText("Devam et (Esc)" if paused else "Duraklat (Esc)")
+        state = "Duraklatıldı" if paused and active else ("Yazmaya hazır" if active else "Tamamlandı / Hazır")
+        self.state_label.setText(f"{state} · F6: yazma alanı · Tab: kontroller")
 
     def _tick(self) -> None:
         wpm = self.engine.current_wpm()
@@ -201,6 +226,7 @@ class TypingArea(QWidget):
             self._timer.stop()
             self.finished.emit(self.engine.get_result())
         self.text_display.update()
+        self._update_controls()
 
     def set_font_size(self, size: int) -> None:
         self.font_size = size
@@ -212,12 +238,15 @@ class TypingArea(QWidget):
 
     def stop(self) -> None:
         self._timer.stop()
+        self._update_controls()
 
     def pause(self) -> None:
         self._timer.stop()
         self.engine.pause()
+        self._update_controls()
 
     def resume(self) -> None:
         if self.engine.target_text and not self.engine.is_finished:
             self.engine.resume()
+            self._update_controls()
             self._timer.start(TICK_MS)

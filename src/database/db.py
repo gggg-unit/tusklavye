@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Callable, List, Tuple
 
@@ -75,7 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_key_stats_session_id ON key_stats(session_id);
 CREATE INDEX IF NOT EXISTS idx_key_stats_key_char ON key_stats(key_char);
 """
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _MIGRATIONS: List[Tuple[int, Callable[[sqlite3.Connection], None]]] = []
 
@@ -96,6 +97,17 @@ def _migrate_v2(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE sessions ADD COLUMN max_wpm REAL NOT NULL DEFAULT 0")
 
 
+@migration(3)
+def _migrate_v3(conn: sqlite3.Connection):
+    """Persist session identity without changing historical metrics or relations."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+    if "session_uid" not in cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN session_uid TEXT")
+    conn.execute("UPDATE sessions SET session_uid = lower(hex(randomblob(16))) "
+                 "WHERE session_uid IS NULL OR session_uid = ''")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_uid ON sessions(session_uid)")
+
+
 class Database:
     """Singleton SQLite wrapper with thread-locked access."""
 
@@ -103,18 +115,30 @@ class Database:
 
     def __init__(self, path: Path = DB_PATH):
         self.path = path
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._transaction_depth = 0
         path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON;")
         self.conn.execute("PRAGMA journal_mode = WAL;")
-        self._init_schema()
+        try:
+            self._init_schema()
+        except BaseException:
+            self.conn.close()
+            raise
 
     def _init_schema(self):
+        exists = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'"
+        ).fetchone()
+        if exists:
+            row = self.conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+            if row[0] is not None and row[0] > _SCHEMA_VERSION:
+                raise ValueError("Database schema is newer than this application")
         self.conn.executescript(_SCHEMA)
-        self._run_migrations()
-        self.conn.commit()
+        with self.transaction():
+            self._run_migrations()
 
     def _run_migrations(self):
         row = self.conn.execute(
@@ -153,11 +177,38 @@ class Database:
         cls._instance = Database(path) if path else Database()
         return cls._instance
 
+    @contextmanager
+    def transaction(self):
+        """Serialize a complete transaction; nested scopes use savepoints."""
+        with self._lock:
+            depth = self._transaction_depth
+            savepoint = f"transaction_{depth}"
+            if depth == 0 and self.conn.in_transaction:
+                raise RuntimeError("Unmanaged transaction is already active")
+            self.conn.execute("BEGIN IMMEDIATE" if depth == 0 else f"SAVEPOINT {savepoint}")
+            self._transaction_depth += 1
+            try:
+                yield self
+                if depth == 0:
+                    self.conn.commit()
+                else:
+                    self.conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            except BaseException:
+                if depth == 0:
+                    self.conn.rollback()
+                else:
+                    self.conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    self.conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                raise
+            finally:
+                self._transaction_depth -= 1
+
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
-            cur = self.conn.execute(sql, params)
-            self.conn.commit()
-            return cur
+            if self._transaction_depth:
+                return self.conn.execute(sql, params)
+            with self.transaction():
+                return self.conn.execute(sql, params)
 
     def execute_no_commit(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -169,7 +220,19 @@ class Database:
 
     def commit(self):
         with self._lock:
-            self.conn.commit()
+            if self._transaction_depth:
+                raise RuntimeError("Use the transaction context to commit")
+            try:
+                self.conn.commit()
+            except BaseException:
+                self.conn.rollback()
+                raise
+
+    def rollback(self):
+        with self._lock:
+            if self._transaction_depth:
+                raise RuntimeError("Use the transaction context to roll back")
+            self.conn.rollback()
 
     def query(self, sql: str, params: tuple = ()) -> list:
         with self._lock:

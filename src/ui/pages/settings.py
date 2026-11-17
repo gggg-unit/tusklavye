@@ -1,7 +1,7 @@
 """Settings page: theme, sound, font size, daily goals, data export/import/reset."""
 from __future__ import annotations
 
-import json
+from ...database.backup import BackupService
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -19,12 +19,6 @@ WPM_MAX = 120
 MIN_MIN = 1
 MIN_MAX = 120
 FLASH_MS = 1500
-EXPORT_LIMIT = 10000
-
-REQUIRED_SESSION_KEYS = {
-    "mode", "total_chars", "correct_chars", "incorrect_chars",
-    "wpm", "accuracy",
-}
 
 
 class SettingsPage(BasePage):
@@ -109,6 +103,10 @@ class SettingsPage(BasePage):
         goals_layout.addLayout(min_row)
         self._root.addWidget(goals_group)
 
+        for spin in (self.font_spin, self.goal_wpm_spin, self.goal_min_spin):
+            spin.setMinimumWidth(120)
+            spin.setAlignment(Qt.AlignCenter)
+
         display_group = QGroupBox("Görüntü Seçenekleri")
         display_layout = QVBoxLayout(display_group)
         self.timer_check = QCheckBox("Süre göstergesini göster")
@@ -141,108 +139,115 @@ class SettingsPage(BasePage):
         self.save_btn = QPushButton("💾 Ayarları Kaydet")
         self.save_btn.setObjectName("primary")
         self.save_btn.clicked.connect(self._save)
-        self._root.addWidget(self.save_btn)
+        self._root.addWidget(self.save_btn, 0, Qt.AlignLeft)
+        self._root.addStretch(1)
+
+    def _data_operation_allowed(self):
+        for page in getattr(self.window(), "pages", {}).values():
+            session = getattr(page, "session", None)
+            if session is None or session.saved:
+                continue
+            if (session.pending is not None or page.engine.typed_char_count > 0
+                    or getattr(page, "_test_active", False)
+                    or getattr(page, "_acc_total", 0) > 0):
+                QMessageBox.warning(
+                    self, "Kaydedilmemiş çalışma",
+                    "Önce mevcut çalışmayı tamamlayın veya Kaydı yeniden dene düğmesini kullanın.")
+                return False
+        return True
 
     def _export_data(self) -> None:
+        if not self._data_operation_allowed():
+            return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Verileri Dışa Aktar", "typing_data.json", "JSON (*.json)"
-        )
+            self, "Verileri Dışa Aktar", "typing_data.json", "JSON (*.json)")
         if not path:
             return
         try:
-            data = {
-                "sessions": [dict(s) for s in self.ctx.stats_repo.get_all_sessions(EXPORT_LIMIT)],
-                "settings": self.ctx.settings_repo.get_all(),
-                "achievements": [dict(a) for a in self.ctx.achievement_repo.get_all()],
-                "lesson_progress": [dict(l) for l in self.ctx.lesson_repo.get_completed().values()],
-            }
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            self.save_btn.setText("✅ Veriler aktarıldı")
+            BackupService(self.ctx.stats_repo.db).export_file(path)
+            self.save_btn.setText("Veriler aktarıldı")
         except Exception as e:
             QMessageBox.warning(self, "Hata", f"Dışa aktarma başarısız: {e}")
 
     def _import_data(self) -> None:
+        if not self._data_operation_allowed():
+            return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Verileri İçe Aktar", "", "JSON (*.json)"
-        )
+            self, "Verileri İçe Aktar", "", "JSON (*.json)")
         if not path:
             return
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            QMessageBox.warning(self, "Hata", f"Dosya okunamadı: {e}")
-            return
-
-        sessions = []
-        settings = {}
-        if isinstance(data, dict):
-            sessions = data.get("sessions", [])
-            settings = data.get("settings", {})
-        elif isinstance(data, list):
-            sessions = data
-        else:
-            QMessageBox.warning(self, "Hata", "Geçersiz JSON formatı.")
-            return
-
-        for s in sessions:
-            if not isinstance(s, dict):
-                continue
-            missing = REQUIRED_SESSION_KEYS - s.keys()
-            if missing:
-                QMessageBox.warning(
-                    self, "Hata",
-                    f"Eksik alanlar: {missing}. İçe aktarma iptal edildi.",
-                )
-                return
-
-        try:
-            for k, v in settings.items():
-                if isinstance(k, str) and isinstance(v, (str, int, float, bool)):
-                    self.ctx.settings_repo.set(k, v)
-            from ...database.models import SessionRecord
-            count = 0
-            for s in sessions:
-                record = SessionRecord(
-                    mode=s.get("mode", "imported"),
-                    mode_detail=s.get("mode_detail", ""),
-                    text_content=s.get("text_content", ""),
-                    total_chars=int(s.get("total_chars", 0)),
-                    correct_chars=int(s.get("correct_chars", 0)),
-                    incorrect_chars=int(s.get("incorrect_chars", 0)),
-                    wpm=float(s.get("wpm", 0.0)),
-                    raw_wpm=float(s.get("raw_wpm", 0.0)),
-                    accuracy=float(s.get("accuracy", 0.0)),
-                    max_wpm=float(s.get("max_wpm", 0.0)),
-                    key_counts={},
-                    started_at=s.get("started_at", ""),
-                )
-                self.ctx.stats_repo.save_session(record)
-                count += 1
-            self.save_btn.setText(f"✅ {count} seans içe aktarıldı")
+            count = BackupService(self.ctx.stats_repo.db).import_file(path)
         except Exception as e:
             QMessageBox.warning(self, "Hata", f"İçe aktarma başarısız: {e}")
+            return
+        self._reload_after_data_change()
+        self.save_btn.setText(f"{count} yeni seans içe aktarıldı")
 
     def _reset_data(self) -> None:
+        if not self._data_operation_allowed():
+            return
         reply = QMessageBox.question(
             self, "Verileri Sıfırla",
             "Tüm seanslar, ders ilerlemesi, başarılar ve ayarlar silinecek. Emin misin?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
         try:
-            db = self.ctx.stats_repo.db
-            db.execute("DELETE FROM key_stats")
-            db.execute("DELETE FROM sessions")
-            db.execute("DELETE FROM lesson_progress")
-            db.execute("DELETE FROM achievements")
-            db.execute("DELETE FROM streak")
-            db.execute("DELETE FROM settings")
-            self.save_btn.setText("✅ Veriler sıfırlandı")
+            BackupService(self.ctx.stats_repo.db).reset()
         except Exception as e:
             QMessageBox.warning(self, "Hata", f"Sıfırlama başarısız: {e}")
+            return
+        self._reload_after_data_change()
+        self.save_btn.setText("Veriler sıfırlandı")
+
+    def _reload_after_data_change(self):
+        from ...config import DEFAULT_SETTINGS
+        repo = self.ctx.settings_repo
+        values = DEFAULT_SETTINGS | repo.get_all()
+        self.ctx.theme = values["theme"]
+        self.ctx.font_size = int(values["font_size"])
+        self.ctx.show_timer = values["show_timer"] == "True"
+        self.ctx.show_wpm = values["show_wpm"] == "True"
+        self.ctx.sound.enabled = values["sound_enabled"] == "True"
+        self.ctx.sound.key_enabled = values["key_sound_enabled"] == "True"
+        self.ctx.sound.error_enabled = values["error_sound_enabled"] == "True"
+        self.ctx.sound.set_volume(int(values["volume"]) / 100)
+        self.theme_combo.setCurrentIndex(0 if self.ctx.theme == "light" else 1)
+        self.font_spin.setValue(self.ctx.font_size)
+        self.sound_check.setChecked(self.ctx.sound.enabled)
+        self.key_sound_check.setChecked(self.ctx.sound.key_enabled)
+        self.error_sound_check.setChecked(self.ctx.sound.error_enabled)
+        self.timer_check.setChecked(self.ctx.show_timer)
+        self.wpm_check.setChecked(self.ctx.show_wpm)
+        self.volume_slider.setValue(int(values["volume"]))
+        self.goal_wpm_spin.setValue(int(values["daily_goal_wpm"]))
+        self.goal_min_spin.setValue(int(values["daily_goal_minutes"]))
+        for page in getattr(self.window(), "pages", {}).values():
+            if hasattr(page, "session"):
+                page.pause_page()
+                page.engine.reset("")
+                page.session.reset()
+                page.retry_save_btn.hide()
+                if hasattr(page, "current_lesson"):
+                    page.current_lesson = None
+                if hasattr(page, "_active"):
+                    page._active = False
+                if hasattr(page, "_test_active"):
+                    page._test_active = False
+                    page._saved = False
+                    page._acc_total = page._acc_correct = page._acc_incorrect = 0
+                    page._acc_key_counts = {}
+                    page._acc_text_parts = []
+                    page._acc_max_wpm = 0
+                    page._test_started_at = ""
+                    page._remaining_seconds = 0
+                    page.start_btn.setText("Testi Başlat")
+                page.typing_area.text_display.update()
+            if hasattr(page, "refresh"):
+                page.refresh()
+        if hasattr(self.window(), "apply_settings"):
+            self.window().apply_settings()
 
     def _save(self) -> None:
         self.ctx.settings_repo.set("theme", "dark" if self.theme_combo.currentIndex() == 1 else "light")

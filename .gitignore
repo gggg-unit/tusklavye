@@ -44,3 +44,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+# Isolated development data and local reports
+.dev-data/
+test-results*.xml

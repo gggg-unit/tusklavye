@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tusklavye"
-version = "1.0.0"
-description = "10 parmak yazma eğitmeni — Türkçe Q klavye için dokuz parmak yazma öğretici"
+version = "2.0"
+description = "10 parmak yazma eğitmeni — Türkçe Q klavye için on parmak yazma öğretici"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [{ name = "TuşKlavye" }]
 keywords = ["typing", "touch-typing", "turkish", "klavye", "10-parmak", "tutor"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: X11 Applications :: Qt",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
@@ -43,11 +43,12 @@ build = [
 tusklavye = "main:main"
 
 [project.urls]
-Homepage = "https://github.com/user/tusklavye"
-Issues = "https://github.com/user/tusklavye/issues"
+Homepage = "https://github.com/gggg-unit/tusklavye"
+Issues = "https://github.com/gggg-unit/tusklavye/issues"
 
 [tool.setuptools]
-packages = ["src", "src.core", "src.database", "src.ui", "src.ui.pages", "src.ui.widgets"]
+py-modules = ["main"]
+packages = ["assets", "src", "src.core", "src.database", "src.ui", "src.ui.pages", "src.ui.widgets"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -80,3 +81,5 @@ ignore = [
 [tool.coverage.run]
 source = ["src"]
 omit = ["tests/*", "test_core.py"]
+[tool.setuptools.package-data]
+assets = ["*.png", "*.ico", "sounds/*.wav"]

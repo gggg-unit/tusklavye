@@ -86,15 +86,20 @@ class HeatmapWidget(QFrame):
 
         painter.end()
 
+    def tooltip_for_key(self, char: str) -> str:
+        counts = self.error_data.get(char, {})
+        total = counts.get("correct", 0) + counts.get("incorrect", 0)
+        if total == 0:
+            return f"'{char}': seçili dönemde veri yok"
+        errors = counts.get("incorrect", 0)
+        return f"'{char}': {errors}/{total} kalan hata (%{errors / total * 100:.1f})"
+
     def event(self, event: QEvent) -> bool:
         if event.type() == QEvent.ToolTip:
             pos = event.pos()
             for char, (rx, ry, rw, rh, errors) in self._key_rects.items():
                 if rx <= pos.x() <= rx + rw and ry <= pos.y() <= ry + rh:
-                    if errors > 0:
-                        QToolTip.showText(event.globalPos(), f"'{char}': {errors} hata", self)
-                    else:
-                        QToolTip.showText(event.globalPos(), f"'{char}': hata yok", self)
+                    QToolTip.showText(event.globalPos(), self.tooltip_for_key(char), self)
                     return True
             QToolTip.hideText()
         return super().event(event)

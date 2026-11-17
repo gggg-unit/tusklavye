@@ -7,11 +7,26 @@ import sys
 
 
 def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+    from src.config import APP_VERSION
+
     parser = argparse.ArgumentParser(description="TuşKlavye — 10 parmak yazma eğitmeni")
-    parser.add_argument("--version", action="version", version="TuşKlavye 1.0.0")
+    parser.add_argument("--version", action="version", version=f"TuşKlavye {APP_VERSION}")
     parser.add_argument("--text", type=str, default=None, help="Start typing this text directly")
     parser.add_argument("--lesson", type=str, default=None, help="Start a specific lesson by ID (e.g. L01)")
+    parser.add_argument("--data-dir", type=str, help="Use an isolated data directory")
+    parser.add_argument("--smoke-test", action="store_true", help="Open all pages and exit (requires --data-dir)")
     args = parser.parse_args()
+    if args.smoke_test and not args.data_dir:
+        parser.error("--smoke-test requires --data-dir")
+    if args.data_dir:
+        from pathlib import Path
+        from src.database.db import Database
+        folder = Path(args.data_dir).resolve()
+        folder.mkdir(parents=True, exist_ok=True)
+        Database.reset(folder / "typing_tutor.db")
 
     try:
         from PySide6.QtWidgets import QApplication
@@ -26,6 +41,8 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
+    from src.ui.app_identity import configure_app_identity
+    configure_app_identity()
     app = QApplication(sys.argv)
     app.setApplicationName("TuşKlavye")
     font = QFont(ui_font(), 10)
@@ -57,6 +74,14 @@ def main() -> None:
             page._start_practice()
 
     window.show()
+    if args.smoke_test:
+        from PySide6.QtCore import QTimer
+        def smoke():
+            for key in window.pages:
+                window._switch_page(key)
+                app.processEvents()
+            window.close()
+        QTimer.singleShot(100, smoke)
     sys.exit(app.exec())
 
 

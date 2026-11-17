@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+import math
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -28,7 +29,7 @@ class TestsPage(BasePage, TypingPageMixin):
         super().__init__(ctx, parent)
         self.engine = TypingEngine(self.ctx.layout)
         self.add_header_with_stats(
-            "Testler", "Zamana karşı yarış ve hız testleri",
+            "Testler", "Süre Başlat düğmesiyle başlar; sayfa değiştirince duraklar.",
             self.ctx.show_timer, self.ctx.show_wpm,
         )
         self._test_active = False
@@ -46,7 +47,9 @@ class TestsPage(BasePage, TypingPageMixin):
         texts = get_texts(level)
         if texts:
             text = random.choice(texts)
-            self.typing_area.set_text(text)
+            self.engine.reset(text)
+            self.typing_area.text_display.update()
+            self.typing_area.state_label.setText("Önizleme")
             self._highlight_next_key()
 
     def _build_ui(self) -> None:
@@ -70,6 +73,7 @@ class TestsPage(BasePage, TypingPageMixin):
         self.custom_spin = QSpinBox()
         self.custom_spin.setRange(1, 30)
         self.custom_spin.setValue(2)
+        self.custom_spin.setMinimumWidth(120)
         self.custom_spin.setSuffix(" dk")
         self.custom_spin.setVisible(False)
         ctrl_layout.addWidget(self.custom_spin)
@@ -86,7 +90,7 @@ class TestsPage(BasePage, TypingPageMixin):
         self.typing_area = TypingArea(self.engine, self.ctx.font_size, self.ctx.show_timer, self.ctx.theme)
         self._root.addWidget(self.typing_area)
         self.typing_area.finished.connect(self._on_finished)
-        self.typing_area.statsUpdated.connect(self.update_header_stats)
+        self.typing_area.statsUpdated.connect(self._update_test_stats)
 
         self.finger_guide = FingerGuide(self.ctx.layout)
         self._root.addWidget(self.finger_guide)
@@ -98,8 +102,14 @@ class TestsPage(BasePage, TypingPageMixin):
         self.time_left_lbl = QLabel(self._format_time(self._get_duration()))
         self.time_left_lbl.setObjectName("statValue")
         self.time_left_lbl.setAlignment(Qt.AlignCenter)
-        self._root.addWidget(self.time_left_lbl)
+        ctrl_layout.insertWidget(ctrl_layout.indexOf(self.start_btn), self.time_left_lbl)
+        self._root.addStretch(1)
         self.custom_spin.valueChanged.connect(self._on_custom_spin_changed)
+
+    def _update_test_stats(self, *_):
+        if self._test_active:
+            result = self._combine_result(self.engine.get_result())
+            self.update_header_stats(result.wpm, result.accuracy, result.duration_seconds)
 
     def _format_time(self, seconds: int) -> str:
         m, s = divmod(seconds, 60)
@@ -133,6 +143,8 @@ class TestsPage(BasePage, TypingPageMixin):
             self._start_test()
 
     def _start_test_with_text(self, text: str) -> None:
+        if not self._prepare_session():
+            return
         self._time_limit = self._get_duration()
         self._remaining_seconds = self._time_limit
         self._test_active = True
@@ -143,39 +155,51 @@ class TestsPage(BasePage, TypingPageMixin):
         self._acc_key_counts: dict = {}
         self._acc_text_parts: list = []
         self._acc_max_wpm = 0.0
-        self._test_started_at = ""
+        self.session.clock.start()
+        self._test_started_at = self.session.clock.get_result().started_at
         self.typing_area.set_text(text)
 
         self.time_left_lbl.setText(self._format_time(self._remaining_seconds))
         self._countdown_timer.start(TICK_MS)
         self.start_btn.setText("Testi Yeniden Başlat")
         self._highlight_next_key()
-        self.window().setFocus()
+        self.typing_area.setFocus()
 
     def _on_countdown_tick(self) -> None:
-        self._remaining_seconds -= 1
+        if not self._test_active or self.session.clock.is_paused:
+            return
+        self._remaining_seconds = max(0, math.ceil(
+            self._time_limit - self.session.clock.elapsed_seconds))
         self.time_left_lbl.setText(self._format_time(self._remaining_seconds))
+        result = self._combine_result(self.engine.get_result())
+        self.update_header_stats(result.wpm, result.accuracy, result.duration_seconds)
         if self._remaining_seconds <= 0:
-            self._countdown_timer.stop()
             self._force_finish()
 
-    def _force_finish(self) -> None:
-        if self._saved or self.engine.is_finished:
+    def on_key_press(self, char: str, key_text: str = "") -> None:
+        if self._test_active and self.session.clock.elapsed_seconds >= self._time_limit:
+            self._force_finish()
             return
-        self._saved = True
+        super().on_key_press(char, key_text)
+
+    def _force_finish(self) -> None:
+        if not self._test_active or self.session.pending is not None:
+            return
         self._test_active = False
+        self._countdown_timer.stop()
+        self.session.clock.finish()
+        self.engine.finish()
         self.typing_area.stop()
-        result = self.engine.get_result()
-        combined = self._combine_result(result)
+        combined = self._combine_result(self.engine.get_result())
         self._save_and_show(combined)
 
     def _is_active(self) -> bool:
         return self._test_active
 
     def _on_finished(self, result) -> None:
-        if self._saved:
+        if not self._test_active or self.session.pending is not None or not self.engine.is_finished:
             return
-        if self._test_active and self._remaining_seconds > 0:
+        if self.session.clock.elapsed_seconds < self._time_limit:
             self._acc_total += result.total_chars
             self._acc_correct += result.correct_chars
             self._acc_incorrect += result.incorrect_chars
@@ -193,23 +217,18 @@ class TestsPage(BasePage, TypingPageMixin):
             self.typing_area.set_text(text)
             self._highlight_next_key()
             return
-        self._saved = True
-        self._countdown_timer.stop()
-        self._test_active = False
-        self.time_left_lbl.setText(self._format_time(self._get_duration()))
-        combined = self._combine_result(result)
-        self._save_and_show(combined)
+        self._force_finish()
 
     def _combine_result(self, current: TypingResult) -> TypingResult:
         total_chars = self._acc_total + current.total_chars
         correct_chars = self._acc_correct + current.correct_chars
         incorrect_chars = self._acc_incorrect + current.incorrect_chars
-        duration = float(self._time_limit - self._remaining_seconds)
+        duration = min(float(self._time_limit), self.session.clock.elapsed_seconds)
         minutes = duration / 60.0
         wpm = round((correct_chars / WPM_WORD_CHARS) / minutes, 1) if minutes > 0 else 0.0
         raw_wpm = round((total_chars / WPM_WORD_CHARS) / minutes, 1) if minutes > 0 else 0.0
         accuracy = round(correct_chars / total_chars * 100.0, 1) if total_chars > 0 else 100.0
-        key_counts = dict(self._acc_key_counts)
+        key_counts = {key: counts.copy() for key, counts in self._acc_key_counts.items()}
         for k, v in current.key_counts.items():
             entry = key_counts.setdefault(k, {"correct": 0, "incorrect": 0})
             entry["correct"] += v.get("correct", 0)
@@ -230,7 +249,6 @@ class TestsPage(BasePage, TypingPageMixin):
         )
 
     def _save_and_show(self, result) -> None:
-        self.ctx.sound.play_success()
         self.finger_guide.clear()
         full_text = "".join(self._acc_text_parts) + self.engine.target_text
         record = SessionRecord(
@@ -246,9 +264,15 @@ class TestsPage(BasePage, TypingPageMixin):
             max_wpm=result.max_wpm,
             key_counts=result.key_counts,
             started_at=result.started_at,
+            duration_seconds=result.duration_seconds,
         )
-        self._save_session(record)
-        self._check_achievements()
+        if not self._save_session(record, completed=True):
+            return
+        self._saved = True
+        self.start_btn.setText("Testi Başlat")
+        if result.total_chars == 0:
+            return
+        self.ctx.sound.play_success()
         dialog = ResultsDialog(result, "Test Tamamlandı", self, show_retry=True, show_next=True)
         dialog.retry_requested.connect(self._retry_test)
         dialog.next_requested.connect(self._start_test)
@@ -256,13 +280,21 @@ class TestsPage(BasePage, TypingPageMixin):
         self.start_btn.setText("Testi Başlat")
 
     def pause_page(self) -> None:
+        if not self._test_active:
+            return
         self.typing_area.pause()
+        self.session.clock.pause()
         self._countdown_timer.stop()
         if self._test_active and not self.engine.is_finished:
             self.time_left_lbl.setText("⏸️ Duraklatıldı")
 
     def resume_page(self) -> None:
-        if self._test_active and not self.engine.is_finished:
-            self.typing_area.resume()
-            self._countdown_timer.start(TICK_MS)
-            self.time_left_lbl.setText(self._format_time(self._remaining_seconds))
+        if self._test_active:
+            self.session.clock.resume()
+            if self.engine.is_finished:
+                self._on_finished(self.engine.get_result())
+            else:
+                self.typing_area.resume()
+            if self._test_active:
+                self._countdown_timer.start(TICK_MS)
+                self._on_countdown_tick()

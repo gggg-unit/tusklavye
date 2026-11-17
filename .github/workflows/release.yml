@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [master]
     tags:
       - "v*"
 
@@ -10,6 +11,9 @@ permissions:
 
 jobs:
   build-windows:
+    if: startsWith(github.ref, 'refs/tags/') || github.event.head_commit.message == 'TuşKlavye 2.0'
+    env:
+      QT_QPA_PLATFORM: offscreen
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,21 +24,23 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install PySide6 PyInstaller
-
-      - name: Generate icon
-        run: python generate_icon.py
-
-      - name: Build executable
-        run: python -m PyInstaller TusKlavye.spec --clean --noconfirm
+          python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Build and test Windows ZIP
+        shell: pwsh
+        run: |
+          python scripts/build_release.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $version = python -c "from src.config import APP_VERSION; print(APP_VERSION)"
+          Compress-Archive -Path "dist/$version/TusKlavye.exe","dist/$version/SHA256SUMS.txt",LICENSE -DestinationPath "dist/TusKlavye-$version-Windows.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TusKlavye-windows
-          path: dist/TusKlavye.exe
+          path: dist/*-Windows.zip
 
   build-linux:
+    if: startsWith(github.ref, 'refs/tags/') || github.event.head_commit.message == 'TuşKlavye 2.0'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +92,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0' }}
+          target_commitish: ${{ github.sha }}
+          body: Türkçe Q klavye için on parmak yazma eğitimi, süreli testler ve özel metin pratiği.
+          fail_on_unmatched_files: true
           files: |
-            dist/TusKlavye.exe
+            dist/*-Windows.zip
             dist/TusKlavye-x86_64.AppImage

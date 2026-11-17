@@ -3,9 +3,9 @@ from src.core.test_texts import get_texts, get_random_text, LEVEL_NAMES, EASY_TE
 
 
 def test_text_counts():
-    assert len(EASY_TEXTS) == 20
-    assert len(MEDIUM_TEXTS) == 20
-    assert len(HARD_TEXTS) == 20
+    assert len(EASY_TEXTS) == 24
+    assert len(MEDIUM_TEXTS) == 24
+    assert len(HARD_TEXTS) == 24
 
 
 def test_get_texts():

@@ -230,4 +230,6 @@ QDialog { background-color: #202020; }
 def get_qss(theme: str) -> str:
     """Return the QSS stylesheet for the given theme."""
     base = DARK_QSS if theme == "dark" else LIGHT_QSS
-    return base.replace("%FONT_CHAIN%", _FONT_CHAIN)
+    return base.replace("%FONT_CHAIN%", _FONT_CHAIN) + """
+QSpinBox QLineEdit { border: none; padding: 0; background: transparent; }
+"""
